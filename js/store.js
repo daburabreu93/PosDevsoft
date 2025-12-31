@@ -40,6 +40,7 @@ const Store = {
 
     // --- Clients ---
     getClients: async () => await Store.request('clients'),
+    getClient: async (id) => await Store.request(`clients/${id}`),
     addClient: async (client) => await Store.request('clients', 'POST', client),
     updateClient: async (client) => await Store.request(`clients/${client.id}`, 'PUT', client),
 

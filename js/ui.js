@@ -121,6 +121,9 @@
                     </form>
                 </div>
             </div>
+            <div id="footer-dev" onclick="UI.showDeveloperInfo()">
+                Desarrollado por <strong>PosDevSoft</strong>
+            </div>
         `;
     },
 
@@ -191,7 +194,7 @@
                 </div>
             </div>
 
-            ${allowedModules.length> 0 ? `
+            ${allowedModules.length > 0 ? `
             <div class="card">
                 <h3>Accesos Rápidos</h3>
                 <div style="display:flex; gap:1rem; margin-top:1rem; flex-wrap:wrap">
@@ -203,14 +206,22 @@
     },
 
     renderDailySummary: (summary, sales, expenses) => {
-        const balanceColor = summary.netBalance>= 0 ? 'var(--success)' : 'var(--danger)';
-        const balanceIcon = summary.netBalance>= 0 ? 'arrow-up' : 'arrow-down';
+        const balanceColor = summary.netBalance >= 0 ? 'var(--success)' : 'var(--danger)';
+        const balanceIcon = summary.netBalance >= 0 ? 'arrow-up' : 'arrow-down';
 
         return `
             <div class="header">
                 <div>
                     <h1 class="page-title">Resumen Diario</h1>
                     <p style="color:var(--text-muted)">Ventas y gastos del día - ${new Date().toLocaleDateString()}</p>
+                </div>
+                <div style="display:flex; gap:1rem">
+                    <button id="btn-export-pdf" class="btn btn-secondary">
+                        <i class="fas fa-file-pdf"></i> Exportar PDF
+                    </button>
+                    <button id="btn-export-excel" class="btn btn-secondary">
+                        <i class="fas fa-file-excel"></i> Exportar Excel
+                    </button>
                 </div>
             </div>
 
@@ -245,7 +256,7 @@
                         <h3>Balance Neto</h3>
                         <p style="color:${balanceColor}">${UI.formatCurrency(summary.netBalance)}</p>
                         <span class="badge" style="background:${balanceColor}; color:white; font-size:0.8rem">
-                            ${summary.netBalance>= 0 ? 'Positivo' : 'Negativo'}
+                            ${summary.netBalance >= 0 ? 'Positivo' : 'Negativo'}
                         </span>
                     </div>
                 </div>
@@ -258,7 +269,7 @@
                         <i class="fas fa-shopping-cart" style="color:var(--success)"></i>
                         Ventas del Día
                     </h3>
-                    ${sales.length> 0 ? `
+                    ${sales.length > 0 ? `
                         <div style="overflow-x:auto">
                             <table>
                                 <thead>
@@ -294,7 +305,7 @@
                         <i class="fas fa-receipt" style="color:var(--danger)"></i>
                         Gastos del Día
                     </h3>
-                    ${expenses.length> 0 ? `
+                    ${expenses.length > 0 ? `
                         <div style="overflow-x:auto">
                             <table>
                                 <thead>
@@ -461,7 +472,7 @@
                                 <td>${c.name}</td>
                                 <td>${c.phone}</td>
                                 <td>${c.email}</td>
-                                <td style="color:${c.debt> 0 ? 'var(--danger)' : 'var(--success)'}">${UI.formatCurrency(c.debt)}</td>
+                                <td style="color:${c.debt > 0 ? 'var(--danger)' : 'var(--success)'}">${UI.formatCurrency(c.debt)}</td>
                                 <td>
                                     <button class="btn btn-sm btn-outline" onclick="window.editClient(${c.id})" title="Editar"><i class="fas fa-edit"></i></button>
                                 </td>
@@ -670,9 +681,9 @@
             <tbody>
                 ${users.map(u => `
                             <tr>
-                                <td>${u.name}</td>
-                                <td>${u.username}</td>
-                                <td>
+                                <td style="text-align:left">${u.name}</td>
+                                <td style="text-align:left">${u.username}</td>
+                                <td style="text-align:left">
                                     <span class="badge ${u.role === 'admin' ? 'badge-primary' : 'badge-success'}">
                                         ${u.role}
                                     </span>
@@ -689,5 +700,49 @@
         </table>
     </div>
 `;
+    },
+
+    showDeveloperInfo: () => {
+        const content = `
+            <div style="text-align:center; padding:1.5rem">
+                <div style="width:80px; height:80px; background:linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%); color:white; border-radius:50%; display:flex; align-items:center; justify-content:center; margin:0 auto 1.5rem auto; font-size:2.5rem; box-shadow:0 10px 20px rgba(67, 97, 238, 0.3)">
+                    <i class="fas fa-code"></i>
+                </div>
+                
+                <h2 style="color:var(--primary); margin-bottom:0.5rem; font-size:1.8rem">PosDevSoft</h2>
+                <p style="color:var(--text-muted); margin-bottom:2rem; font-size:1rem">Soluciones Tecnológicas Profesionales</p>
+                
+                <div style="background:rgba(67, 97, 238, 0.05); border-radius:12px; padding:1.5rem; text-align:left">
+                    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem">
+                        <div style="width:36px; height:36px; background:white; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--primary); box-shadow:0 2px 4px rgba(0,0,0,0.05)"><i class="fas fa-user"></i></div>
+                        <div>
+                            <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600">Desarrollador</div>
+                            <div style="font-weight:600; font-size:1.1rem">Deivi Jr. Abreu</div>
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex; align-items:center; gap:1rem; margin-bottom:1rem">
+                        <div style="width:36px; height:36px; background:white; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--success); box-shadow:0 2px 4px rgba(0,0,0,0.05)"><i class="fas fa-envelope"></i></div>
+                        <div>
+                            <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600">Email</div>
+                            <div style="font-weight:600; font-size:1.1rem"><a href="mailto:deivi.jr.abreu@gmail.com" style="color:inherit; text-decoration:none">deivi.jr.abreu@gmail.com</a></div>
+                        </div>
+                    </div>
+                    
+                    <div style="display:flex; align-items:center; gap:1rem">
+                        <div style="width:36px; height:36px; background:white; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--danger); box-shadow:0 2px 4px rgba(0,0,0,0.05)"><i class="fas fa-phone-alt"></i></div>
+                        <div>
+                            <div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.5px; font-weight:600">Teléfono</div>
+                            <div style="font-weight:600; font-size:1.1rem"><a href="tel:8094643278" style="color:inherit; text-decoration:none">809-464-3278</a></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-top:2rem; font-size:0.9rem; color:var(--text-muted)">
+                    © ${new Date().getFullYear()} Todos los derechos reservados.
+                </div>
+            </div>
+        `;
+        UI.modal('Información de Contacto', content);
     }
 };

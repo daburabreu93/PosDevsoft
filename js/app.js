@@ -481,7 +481,34 @@ const App = {
                         payee: type === 'expense' ? formData.get('payee') : null
                     };
 
-                    await Store.request('accounts-payable', 'POST', data);
+                    const res = await Store.request('accounts-payable', 'POST', data);
+
+                    // Generate PDF
+                    let entityName = data.payee;
+                    if (data.supplierId) {
+                        const s = suppliers.find(sup => sup.id == data.supplierId);
+                        if (s) entityName = s.name;
+                    }
+
+                    if (await UI.showConfirm('Documento Creado', '¿Desea imprimir el comprobante?')) {
+                        App.exportInvoicePDF({
+                            title: data.type === 'invoice' ? 'FACTURA DE COMPRA' : 'COMPROBANTE DE GASTO',
+                            id: res.id || '---',
+                            date: new Date(data.date),
+                            entityLabel: data.type === 'invoice' ? 'Suplidor' : 'Beneficiario',
+                            entityName: entityName,
+                            description: data.description, // Pass description for header/note
+                            items: [{
+                                name: data.description,
+                                qty: 1,
+                                price: data.amount,
+                                total: data.amount
+                            }],
+                            total: data.amount,
+                            type: 'purchase'
+                        });
+                    }
+
                     overlay.remove();
                     App.navigate('accounts-payable');
                 } catch (err) { UI.showAlert('Error', err.message, 'error'); }
@@ -836,6 +863,9 @@ const App = {
                     <!-- Dynamic View -->
                 </main>
             </div>
+            <div id="footer-dev" onclick="UI.showDeveloperInfo()">
+                Desarrollado por <strong>PosDevSoft</strong>
+            </div>
         `;
     },
 
@@ -897,6 +927,12 @@ const App = {
                     const daySales = await Store.getTodaySales();
                     const dayExpenses = await Store.getTodayExpenses();
                     main.innerHTML = UI.renderDailySummary(summary, daySales, dayExpenses);
+
+                    // Bind Export Buttons
+                    const btnPdf = document.getElementById('btn-export-pdf');
+                    const btnExcel = document.getElementById('btn-export-excel');
+                    if (btnPdf) btnPdf.onclick = () => App.exportDailyPDF(summary, daySales, dayExpenses);
+                    if (btnExcel) btnExcel.onclick = () => App.exportDailyExcel(summary, daySales, dayExpenses);
                     break;
                 case 'products':
                     const products = await Store.getProducts();
@@ -1164,15 +1200,49 @@ const App = {
         const finalizeSale = async (method) => {
             const creditDays = document.getElementById('credit-days').value;
             try {
-                await Store.createSale({
+                const res = await Store.createSale({
                     items: cart,
                     clientId: clientId,
                     total: total,
                     paymentMethod: method,
                     creditDays: creditDays
                 });
-                const message = method === 'credit' ? `Crédito ${creditDays} días` : 'Contado';
-                UI.showAlert('Venta Exitosa', `Venta procesada con éxito (${message})`, 'success');
+
+                // --- Generate Invoice PDF ---
+                let clientName = "Cliente General";
+                let clientData = {};
+
+                if (clientId) {
+                    try {
+                        clientData = await Store.getClient(clientId);
+                        clientName = clientData.name;
+                    } catch (e) { console.error("Could not fetch client details", e); }
+                }
+
+                if (await UI.showConfirm('Venta Exitosa', '¿Desea imprimir la factura?')) {
+                    App.exportInvoicePDF({
+                        title: 'FACTURA DE VENTA',
+                        id: res.id,
+                        date: new Date(),
+                        entityLabel: 'Cliente',
+                        entityName: clientName,
+                        entityAddress: clientData.address || '',
+                        entityPhone: clientData.phone || '',
+                        entityEmail: clientData.email || '',
+                        items: cart.map(i => ({
+                            name: i.name,
+                            qty: i.qty,
+                            price: i.price,
+                            total: i.qty * i.price
+                        })),
+                        total: total,
+                        type: 'sale'
+                    });
+                } else {
+                    const message = method === 'credit' ? `Crédito ${creditDays} días` : 'Contado';
+                    UI.showAlert('Venta Exitosa', `Venta procesada con éxito (${message})`, 'success');
+                }
+
                 cart = [];
                 overlay.remove();
                 App.navigate('pos');
@@ -1189,6 +1259,410 @@ const App = {
         if (btnCredit && !btnCredit.disabled) btnCredit.onclick = () => {
             finalizeSale('credit');
         };
+    },
+
+    exportInvoicePDF: (data) => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Colors - Modern Palette
+        const primary = [102, 126, 234]; // #667eea
+        const primaryLight = [240, 242, 255];
+        const textDark = [50, 50, 60];
+        const textLight = [150, 150, 160];
+        const accent = [255, 107, 107]; // Soft Red for total/highlights if needed
+
+        const width = doc.internal.pageSize.getWidth();
+        const height = doc.internal.pageSize.getHeight();
+
+        // --- Background Graphic (Curved Header Effect) ---
+        // Simulating a curve with a partial large circle or clean rounded block
+        doc.setFillColor(...primary);
+        doc.roundedRect(0, -20, width, 60, 10, 10, 'F'); // Top bar with soft edges
+
+        // --- Header Info ---
+        doc.setTextColor(255, 255, 255);
+
+        // Company Name (Left)
+        doc.setFontSize(28);
+        doc.setFont('helvetica', 'bold');
+        doc.text("POSDEVSOFT", 20, 25);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text("SISTEMA DE VENTAS", 20, 31);
+
+        // Doc Info (Right - Floating Pill)
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(width - 85, 12, 70, 24, 4, 4, 'F');
+
+        doc.setTextColor(...primary);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text("RECIBO DE PAGO", width - 50, 20, { align: 'center' });
+
+        doc.setTextColor(...textDark);
+        doc.setFontSize(12);
+        doc.text(`#${data.id}`, width - 50, 28, { align: 'center' });
+
+        // --- Client / Details Section (Cards) ---
+        let cardsY = 55;
+
+        // Helper for rounded card background
+        const drawCard = (x, y, w, h, title, content, subContent = "") => {
+            doc.setFillColor(...primaryLight);
+            doc.setDrawColor(...primaryLight); // No border
+            doc.roundedRect(x, y, w, h, 6, 6, 'F');
+
+            doc.setFontSize(8);
+            doc.setTextColor(...textLight);
+            doc.setFont('helvetica', 'bold');
+            doc.text(title.toUpperCase(), x + 6, y + 10);
+
+            doc.setFontSize(11);
+            doc.setTextColor(...textDark);
+            doc.setFont('helvetica', 'bold');
+            doc.text(content, x + 6, y + 18);
+
+            if (subContent) {
+                doc.setFontSize(9);
+                doc.setTextColor(...textLight);
+                doc.setFont('helvetica', 'normal');
+                doc.text(subContent, x + 6, y + 24);
+            }
+        };
+
+        // Client Card
+        let clientInfo = data.entityName;
+        let subInfo = data.description || "Cliente Preferencial";
+
+        // Append extra details if available
+        if (data.entityAddress) subInfo = data.entityAddress;
+        if (data.entityPhone) subInfo += ` \nTel: ${data.entityPhone}`;
+
+        drawCard(15, cardsY, 95, 35, data.entityLabel, clientInfo, subInfo);
+
+        // Date Card
+        const dateStr = data.date.toLocaleDateString();
+        const timeStr = data.date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+        drawCard(120, cardsY, 75, 30, "FECHA DE EMISIÓN", dateStr, timeStr);
+
+        // --- Total Section (The 'Hero' Element) ---
+        // Large, modern, perhaps with a soft shadow simulation (grey border)
+        const totalY = cardsY + 40;
+        doc.setFillColor(255, 255, 255);
+        doc.setDrawColor(230, 230, 230);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(15, totalY, width - 30, 35, 8, 8, 'FD');
+
+        doc.setFontSize(10);
+        doc.setTextColor(...textLight);
+        doc.setFont('helvetica', 'bold');
+        doc.text("MONTO TOTAL A PAGAR", width / 2, totalY + 12, { align: 'center' });
+
+        doc.setFontSize(26);
+        doc.setTextColor(...primary);
+        doc.setFont('helvetica', 'bold');
+        doc.text(UI.formatCurrency(data.total), width / 2, totalY + 26, { align: 'center' });
+
+        // --- Items Table (Minimalist) ---
+        let tableY = totalY + 50;
+
+        const tableStyles = {
+            headStyles: {
+                fillColor: [255, 255, 255],
+                textColor: primary,
+                fontStyle: 'bold',
+                halign: 'left',
+                lineWidth: 0
+            },
+            bodyStyles: {
+                fillColor: [255, 255, 255],
+                textColor: textDark,
+                fontSize: 10,
+                cellPadding: 5
+                // No lines
+            },
+            alternateRowStyles: {
+                fillColor: [248, 249, 252] // Very subtle alternation
+            },
+            columnStyles: {
+                0: { cellWidth: 'auto' }, // Description
+                1: { halign: 'center', cellWidth: 25 }, // Qty
+                2: { halign: 'right', cellWidth: 35 }, // Price
+                3: { halign: 'right', fontStyle: 'bold', cellWidth: 35 } // Total
+            },
+            margin: { left: 15, right: 15 }
+        };
+
+        const body = data.items.map(item => [
+            item.name,
+            item.qty,
+            UI.formatCurrency(item.price),
+            UI.formatCurrency(item.total)
+        ]);
+
+        doc.autoTable({
+            startY: tableY,
+            head: [['DESCRIPCIÓN', 'CANT', 'PRECIO', 'TOTAL']],
+            body: body,
+            theme: 'plain', // Very clean
+            styles: {
+                cellPadding: 6,
+                fontSize: 10
+            },
+            headStyles: {
+                fontSize: 9,
+                textColor: textLight
+            },
+            ...tableStyles
+        });
+
+        // --- Footer (Bottom Curve) ---
+        const footerY = height - 15;
+        doc.setFillColor(...primaryLight);
+        doc.roundedRect(0, height - 25, width, 30, 15, 15, 'F'); // Bottom curve
+
+        doc.setFontSize(9);
+        doc.setTextColor(...primary);
+        doc.text("¡Gracias por su compra!", width / 2, footerY, { align: 'center' });
+
+        doc.autoPrint();
+        window.open(doc.output('bloburl'), '_blank');
+    },
+
+    exportDailyPDF: (summary, sales, expenses) => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+
+        // Colors - Modern Palette
+        const primary = [102, 126, 234]; // #667eea
+        const primaryLight = [240, 242, 255];
+        const textDark = [50, 50, 60];
+        const textLight = [150, 150, 160];
+        const dangerColor = [220, 53, 69];
+        const successColor = [40, 167, 69];
+
+        const width = doc.internal.pageSize.getWidth();
+        const height = doc.internal.pageSize.getHeight();
+
+        // --- Header Section ---
+        doc.setFillColor(...primary);
+        doc.roundedRect(0, -20, width, 60, 10, 10, 'F'); // Top bar with soft edges
+
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(24);
+        doc.setFont('helvetica', 'bold');
+        doc.text("REPORTE DIARIO", 20, 25);
+
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Fecha: ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`, 20, 32);
+
+        // Doc Info (Right - Floating Pill)
+        doc.setFillColor(255, 255, 255);
+        doc.roundedRect(width - 85, 12, 70, 24, 4, 4, 'F');
+
+        doc.setTextColor(...primary);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'bold');
+        doc.text("SISTEMA POSDEVSOFT", width - 50, 26, { align: 'center' });
+
+        // --- Summary Cards Section ---
+        let cardsY = 55;
+
+        // Helper for rounded card background
+        const drawStatCard = (x, y, w, h, title, value, color) => {
+            doc.setFillColor(...primaryLight);
+            doc.setDrawColor(...primaryLight);
+            doc.roundedRect(x, y, w, h, 6, 6, 'F');
+
+            doc.setFontSize(9);
+            doc.setTextColor(...textLight);
+            doc.setFont('helvetica', 'bold');
+            doc.text(title.toUpperCase(), x + 10, y + 12);
+
+            doc.setFontSize(16);
+            doc.setTextColor(...color);
+            doc.setFont('helvetica', 'bold');
+            doc.text(value, x + 10, y + 22);
+        };
+
+        const cardWidth = (width - 40) / 3;
+        const spacing = 10;
+        let currentX = 15;
+
+        drawStatCard(currentX, cardsY, cardWidth, 30, "Total Ventas", UI.formatCurrency(summary.totalSales), successColor);
+        currentX += cardWidth + (spacing / 2);
+
+        drawStatCard(currentX, cardsY, cardWidth, 30, "Total Gastos", UI.formatCurrency(summary.totalExpenses), dangerColor);
+        currentX += cardWidth + (spacing / 2);
+
+        const balanceColor = summary.netBalance >= 0 ? successColor : dangerColor;
+        drawStatCard(currentX, cardsY, cardWidth, 30, "Balance Neto", UI.formatCurrency(summary.netBalance), balanceColor);
+
+        // --- Tables Configuration ---
+        const tableStyles = {
+            headStyles: {
+                fillColor: [255, 255, 255],
+                textColor: primary,
+                fontStyle: 'bold',
+                halign: 'left',
+                lineWidth: 0
+            },
+            bodyStyles: {
+                fillColor: [255, 255, 255],
+                textColor: textDark,
+                fontSize: 9,
+                cellPadding: 4
+            },
+            alternateRowStyles: {
+                fillColor: [248, 249, 252]
+            },
+            columnStyles: {
+                1: { halign: 'right' },
+            }
+        };
+
+        // --- Sales Section ---
+        let currentY = cardsY + 40;
+        doc.setFontSize(12);
+        doc.setTextColor(...textDark);
+        doc.setFont('helvetica', 'bold');
+        doc.text("Detalle de Ventas", 15, currentY);
+
+        const salesData = sales.map(s => [
+            s.clientname || 'Cliente Casual',
+            UI.formatCurrency(s.total),
+            s.paymentmethod === 'cash' ? 'Contado' : 'Crédito',
+            new Date(s.date).toLocaleTimeString()
+        ]);
+
+        if (salesData.length > 0) {
+            doc.autoTable({
+                startY: currentY + 5,
+                head: [['Cliente', 'Monto', 'Método', 'Hora']],
+                body: salesData,
+                theme: 'plain',
+                styles: { cellPadding: 5 },
+                headStyles: { fontSize: 9, textColor: textLight },
+                ...tableStyles,
+                columnStyles: {
+                    1: { halign: 'right', fontStyle: 'bold' },
+                    2: { halign: 'center' },
+                    3: { halign: 'right' }
+                },
+                margin: { left: 15, right: 15 }
+            });
+            currentY = doc.lastAutoTable.finalY + 15;
+        } else {
+            doc.setFontSize(10);
+            doc.setTextColor(...textLight);
+            doc.setFont('helvetica', 'italic');
+            doc.text("No se registraron ventas en este período.", 15, currentY + 12);
+            currentY += 25;
+        }
+
+        // --- Expenses Section ---
+        doc.setFontSize(12);
+        doc.setTextColor(...textDark);
+        doc.setFont('helvetica', 'bold');
+        doc.text("Detalle de Gastos", 15, currentY);
+
+        const expensesData = expenses.map(e => [
+            e.description,
+            e.payee || (e.suppliername || 'N/A'),
+            UI.formatCurrency(e.amount),
+            new Date(e.date).toLocaleTimeString()
+        ]);
+
+        if (expensesData.length > 0) {
+            doc.autoTable({
+                startY: currentY + 5,
+                head: [['Concepto', 'Beneficiario', 'Monto', 'Hora']],
+                body: expensesData,
+                theme: 'plain',
+                styles: { cellPadding: 5 },
+                headStyles: { fontSize: 9, textColor: textLight },
+                ...tableStyles,
+                columnStyles: {
+                    2: { halign: 'right', fontStyle: 'bold' },
+                    3: { halign: 'right' }
+                },
+                margin: { left: 15, right: 15 }
+            });
+            currentY = doc.lastAutoTable.finalY + 10;
+        } else {
+            doc.setFontSize(10);
+            doc.setTextColor(...textLight);
+            doc.setFont('helvetica', 'italic');
+            doc.text("No se registraron gastos en este período.", 15, currentY + 12);
+            // currentY += 20;
+        }
+
+        // --- Footer (Bottom Curve) ---
+        // Ensuring footer is at the bottom
+        const footerY = height - 15;
+        doc.setFillColor(...primaryLight);
+        doc.roundedRect(0, height - 25, width, 30, 15, 15, 'F');
+
+        const pageCount = doc.internal.getNumberOfPages();
+        for (let i = 1; i <= pageCount; i++) {
+            doc.setPage(i);
+            // Re-draw footer on each page if multi-page (though simple roundedRect might overlap text if content is long, for now let's keep it simple)
+            if (i > 1) {
+                // For subsequent pages, just page number
+                doc.setFontSize(8);
+                doc.setTextColor(150);
+                doc.text(`Página ${i} de ${pageCount}`, width - 20, height - 10, { align: 'right' });
+            } else {
+                doc.setFontSize(9);
+                doc.setTextColor(...primary);
+                doc.text("POSDEVSOFT - Reporte Operativo", width / 2, height - 10, { align: 'center' });
+            }
+        }
+
+        doc.autoPrint();
+        window.open(doc.output('bloburl'), '_blank');
+    },
+
+
+
+    exportDailyExcel: (summary, sales, expenses) => {
+        const wb = XLSX.utils.book_new();
+
+        // Summary Sheet
+        const summaryData = [
+            ['Resumen Diario', new Date().toLocaleDateString()],
+            [''],
+            ['Total Ventas', summary.totalSales, summary.salesCount],
+            ['Total Gastos', summary.totalExpenses, summary.expenseCount],
+            ['Balance Neto', summary.netBalance]
+        ];
+        const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+        XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen");
+
+        // Sales Sheet
+        const salesData = sales.map(s => ({
+            Cliente: s.clientname || 'Cliente Genérico',
+            Monto: s.total,
+            Metodo: s.paymentmethod === 'cash' ? 'Contado' : 'Crédito',
+            Hora: new Date(s.date).toLocaleTimeString()
+        }));
+        const wsSales = XLSX.utils.json_to_sheet(salesData);
+        XLSX.utils.book_append_sheet(wb, wsSales, "Ventas");
+
+        // Expenses Sheet
+        const expensesData = expenses.map(e => ({
+            Concepto: e.description,
+            Beneficiario: e.payee || (e.suppliername || '-'),
+            Monto: e.amount,
+            Hora: new Date(e.date).toLocaleTimeString()
+        }));
+        const wsExpenses = XLSX.utils.json_to_sheet(expensesData);
+        XLSX.utils.book_append_sheet(wb, wsExpenses, "Gastos");
+
+        XLSX.writeFile(wb, `resumen-diario-${new Date().toISOString().split('T')[0]}.xlsx`);
     }
 };
 

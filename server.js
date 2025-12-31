@@ -127,6 +127,24 @@ app.get('/api/clients', async (req, res) => {
     } catch (err) { res.status(500).send(err.message); }
 });
 
+app.get('/api/clients/:id', async (req, res) => {
+    try {
+        const pool = await getConnection();
+        const result = await pool.request()
+            .input('id', sql.Int, req.params.id)
+            .query('SELECT * FROM Clients WHERE id = @id');
+
+        if (result.recordset.length > 0) {
+            const row = result.recordset[0];
+            const lower = {};
+            for (const k in row) lower[k.toLowerCase()] = row[k];
+            res.json(lower);
+        } else {
+            res.status(404).send('Client not found');
+        }
+    } catch (err) { res.status(500).send(err.message); }
+});
+
 app.post('/api/clients', async (req, res) => {
     const { name, email, phone, address, creditLimit, allowCredit, creditDays } = req.body;
     try {
@@ -457,8 +475,8 @@ app.post('/api/accounts-payable', async (req, res) => {
             .input('date', sql.DateTime, date)
             .input('type', sql.NVarChar(50), type || 'invoice')
             .input('payee', sql.NVarChar(200), payee)
-            .query('INSERT INTO AccountsPayable (supplierId, description, amount, initialAmount, date, type, payee) VALUES (@supplierId, @description, @amount, @amount, @date, @type, @payee)');
-        res.json({ message: 'AP created' });
+            .query('INSERT INTO AccountsPayable (supplierId, description, amount, initialAmount, date, type, payee) OUTPUT INSERTED.id VALUES (@supplierId, @description, @amount, @amount, @date, @type, @payee)');
+        res.json({ message: 'AP created', id: result.recordset[0].id });
     } catch (err) { res.status(500).send(err.message); }
 });
 
